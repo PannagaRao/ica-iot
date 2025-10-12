@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data View</title>
+    <!-- Add Bootstrap CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='jquery.dataTables.min.css') }}">
+</head>
+
+<body>
+    <style>
+        tr td {
+            text-align: center !important;
+        }
+
+        .btn-outline-secondary {
+            background-color: white;
+            border-color: #6c757d;
+            color: #070808;
+            font-weight: 700 !important;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-outline-secondary:hover {
+            background-color: #e9ecef;
+            border-color: #6c757d;
+            color: #343a40;
+        }
+
+        .spinner-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
+            background: #0006;
+        }
+
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 16px solid #3498db;
+            width: 100px;
+            height: 100px;
+            -webkit-animation: spin 2s linear infinite;
+            /* Safari */
+            animation: spin 2s linear infinite;
+        }
+
+        .d-none {
+            display: none !important;
+        }
+
+        .fw-bold {
+            font-weight: 600 !important;
+        }
+
+        /* Safari */
+        @-webkit-keyframes spin {
+            0% {
+                -webkit-transform: rotate(0deg);
+            }
+
+            100% {
+                -webkit-transform: rotate(360deg);
+            }
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <div class="d-none spinner-container">
+        <div class="loader"></div>
+    </div>
+    <div class="mx-5 px-5">
+        <div class="d-flex justify-content-between align-items-center my-3">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" height="60">
+
+            <div class="d-flex">
+                <button class="btn btn-outline-secondary mx-1 fw-bold" id="print_data">Report Data</button>
+                <button type="button" class="btn btn-outline-secondary mx-1 fw-bold" id="del_batch" data-toggle="modal"
+                    data-target="#del_confirm_modal">Delete Batch</button>
+                <button type="button" class="btn btn-outline-secondary mx-1 fw-bold" id="del_all" data-toggle="modal"
+                    data-target="#del_confirm_modal">Delete All</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table id="myTable" class="table w-100">
+                <thead>
+                    <tr>
+                        <td class="fw-bold text-start">Model</td>
+                        <td class="text-end" colspan="3">DISPAX REACTOR DR 2000/05</td>
+                        <td class="fw-bold text-start">Date</td>
+                        <td class="text-end" colspan="2" id="current_date"></td>
+                        <td class="fw-bold text-start">Project Number</td>
+                        <td class="text-end" colspan="2">20125620</td>
+                    </tr>
+
+                    <tr>
+                        <td class="fw-bold text-start">Serial Number</td>
+                        <td class="text-end" colspan="3">IB24-1367</td>
+                        <td class="fw-bold text-start">Set RPM</td>
+                        <td class="text-end" colspan="2" id="batch_rpm">{{ data[0].register10 if data else "" }}</td>
+                        <td class="fw-bold text-start">Set Time</td>
+                        <td class="text-end" colspan="2" id="batch_time">{{ data[0].register8 if data else "" }}</td>
+                    </tr>
+                    <tr>
+                        <th rowspan="2" class="text-center">SL.NO</th>
+                        <th rowspan="2" class="text-center">Date & Time</th>
+                        <th rowspan="2" class="text-center">Batch ID</th>
+                        <th class="text-center">Motor Speed</th>
+                        <th class="text-center">Motor Current</th>
+                        <th class="text-center">Motor Torque</th>
+                        <th class="text-center">Motor Run Hour</th>
+                        <th class="text-center">Product Temperature</th>
+                        <th class="text-center">Tool Speed</th>
+                        <th class="text-center">Actual Time</th>
+                    </tr>
+                    <tr>
+                        <th class="text-center">(RPM)</th>
+                        <th class="text-center">(Amps)</th>
+                        <th class="text-center">(%)</th>
+                        <th class="text-center">(Hour)</th>
+                        <th class="text-center">(°C)</th>
+                        <th class="text-center">(RPM)</th>
+                        <th class="text-center">(Second)</th>
+                    </tr>
+                    <tr style="display:none;">
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    {% for entry in data %}
+                    <tr>
+                        <td>{{ entry.id }}</td>
+                        <td>{{ entry.timestamp }}</td>
+                        <td>{{ entry.register1 }}</td>
+                        <td>{{ entry.register2 }}</td>
+                        <td>{{ entry.register3 }}</td>
+                        <td>{{ entry.register4 }}</td>
+                        <td>{{ entry.register5 }}</td>
+                        <td>{{ entry.register6 }}</td>
+                        <td>{{ entry.register7 }}</td>
+                        <td>{{ entry.register9 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <!-- Modal -->
+    <!-- <div class="modal fade" id="del_confirm_modal" tabindex="-1" aria-labelledby="del_confirm_modalLabel" aria-hidden="true"> -->
+    <div class="modal" id="del_confirm_modal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Are you sure?</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Do you really want to delete data?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">No</button>
+                    <a href="/del_batch" id="del_target"><button type="button" class="btn btn-primary">Yes</button></a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Add jQuery before DataTables JS -->
+    <script src="{{ url_for('static', filename='jquery-3.7.0.js') }}"></script>
+    <!-- Add DataTables JS after jQuery -->
+    <script src="{{ url_for('static', filename='jquery.dataTables.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='bootstrap.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='popper.min.js') }}"></script>
+    <!-- <script src="{{ url_for('static', filename='powerbuttons.js') }}"></script> -->
+    <script>
+        $(document).ready(function () {
+            let date = new Date();
+            let current_date = date.toLocaleDateString("en-GB");
+            $("#current_date").text(current_date);
+            $("#print_data").attr("disabled", true);
+            $("#del_batch").attr("disabled", true);
+            var table = $('#myTable').DataTable({
+
+                "processing": true,
+                "serverSide": true,
+                "orderCellsTop": true,
+                "ajax": {
+                    "url": "/filterData",
+                    "type": "GET"
+                },
+                "columns": [
+                    {
+                        "data": 0,
+                        "render": function (data, type, row, meta) {
+                            let pageInfo = $('#myTable').DataTable().page.info();
+                            return ((pageInfo.page * pageInfo.length) + meta.row + 1);
+                        }
+                    },
+                    {
+                        "data": 1,
+                        "render": function (data, type, row, meta) {
+                            if (type === 'display') {
+                                let date = new Date(data);
+                                return date.toLocaleString("en-GB");
+                            } else {
+                                return data;
+                            }
+                        }
+                    },
+                    { "data": 2 },
+                    {
+                        "data": 3,
+                        "render": function (data, type, row, meta) {
+                            if (type === 'display') {
+                                var num = parseFloat(data).toFixed(2);
+                                while (num.endsWith("0")) {
+                                    num = num.slice(0, -1);
+                                }
+                                if (num.endsWith(".")) num = num.slice(0, -1);
+                                return num;
+                            } else {
+                                return data;
+                            }
+                        }
+                    },
+                    {
+                        "data": 4,
+                        "render": function (data, type, row, meta) {
+                            if (type === 'display') {
+                                var num = parseFloat(data).toFixed(2);
+                                while (num.endsWith("0")) {
+                                    num = num.slice(0, -1);
+                                }
+                                if (num.endsWith(".")) num = num.slice(0, -1);
+                                return num;
+                            } else {
+                                return data;
+                            }
+                        }
+                    },
+                    {
+                        "data": 5,
+                        "render": function (data, type, row, meta) {
+                            if (type === 'display') {
+                                var num = parseFloat(data).toFixed(2);
+                                while (num.endsWith("0")) {
+                                    num = num.slice(0, -1);
+                                }
+                                if (num.endsWith(".")) num = num.slice(0, -1);
+                                return num;
+                            } else {
+                                return data;
+                            }
+                        }
+                    },
+                    { "data": 6 },
+                    {
+                        "data": 7,
+                        "render": function (data, type, row, meta) {
+                            if (type === 'display') {
+                                var num = parseFloat(data).toFixed(2);
+                                while (num.endsWith("0")) {
+                                    num = num.slice(0, -1);
+                                }
+                                if (num.endsWith(".")) num = num.slice(0, -1);
+                                return num;
+                            } else {
+                                return data;
+                            }
+                        }
+                    },
+                    {
+                        "data": 8,
+                        "render": function (data, type, row, meta) {
+                            if (type === 'display') {
+                                var num = parseFloat(data).toFixed(2);
+                                while (num.endsWith("0")) {
+                                    num = num.slice(0, -1);
+                                }
+                                if (num.endsWith(".")) num = num.slice(0, -1);
+                                return num;
+                            } else {
+                                return data;
+                            }
+                        }
+                    },
+                    { "data": 10 }
+                ]
+            });
+
+            $('#print_data').on('click', function (e) {
+                e.preventDefault();
+
+                //Set the filename for the PDF file
+                let date = new Date().toISOString().replace("T", "_").replaceAll(":", "-").split(".")[0];
+                let filename = `report_data_${date}.pdf`;
+                let batch_id = $('#myTable_filter input').val();
+
+                if (batch_id) {
+                    let url = `/report?filename=${filename}&batch_id=${batch_id}`;
+                    $(".spinner-container").removeClass("d-none");
+                    fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json; charset=utf-8'
+                        },
+                    })
+                        .then(response => response.blob())
+                        .then(response => {
+                            const blob = new Blob([response], { type: 'application/pdf' });
+                            const downloadUrl = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = downloadUrl;
+                            a.download = filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            $(".spinner-container").addClass("d-none");
+                        })
+                }
+            });
+
+            $('#myTable_filter input').on('keyup', function () {
+                table
+                    .columns(2) // replace 'columnIndex' with the index of Register1 column  
+                    .search(this.value)
+                    .draw();
+                if (table.data().count() === 0 || $('#myTable_filter input').val() === "") {
+                    $("#print_data").attr("disabled", true);
+                    $("#del_batch").attr("disabled", true);
+                    $("#batch_rpm").text("");
+                    $("#batch_time").text("");
+                } else {
+                    $("#print_data").attr("disabled", false);
+                    $("#del_batch").attr("disabled", false);
+                    $("#batch_rpm").text(table.data().eq(0)[11]);
+                    $("#batch_time").text(table.data().eq(0)[9]);
+                }
+            });
+
+            $('#del_batch').on('click', function (e) {
+                $('#del_confirm_modal .modal-body p').text("Do you really want to delete Batch ID " + $('#myTable_filter input').val() + " data?");
+                $('#del_target').attr("href", "/del_batch");
+            })
+            $('#del_all').on('click', function (e) {
+                $('#del_confirm_modal .modal-body p').text("Do you really want to delete all data?");
+                $('#del_target').attr("href", "/del_all");
+            })
+        });
+    </script>
+</body>
+
+</html>
