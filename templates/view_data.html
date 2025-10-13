@@ -2,18 +2,21 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Data View</title>
-    <!-- Add Bootstrap CSS -->
+
+    <!-- Bootstrap & DataTables CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='jquery.dataTables.min.css') }}">
-</head>
 
-<body>
     <style>
         tr td {
             text-align: center !important;
+        }
+
+        .fw-bold {
+            font-weight: 600 !important;
         }
 
         .btn-outline-secondary {
@@ -21,7 +24,6 @@
             border-color: #6c757d;
             color: #070808;
             font-weight: 700 !important;
-            transition: background-color 0.2s ease;
         }
 
         .btn-outline-secondary:hover {
@@ -30,17 +32,19 @@
             color: #343a40;
         }
 
+        /* spinner */
         .spinner-container {
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            position: fixed;
+            inset: 0;
             z-index: 9999;
-            background: #0006;
+            background: rgba(0, 0, 0, .35);
+        }
+
+        .spinner-container.show {
+            display: flex;
         }
 
         .loader {
@@ -49,47 +53,73 @@
             border-top: 16px solid #3498db;
             width: 100px;
             height: 100px;
-            -webkit-animation: spin 2s linear infinite;
-            /* Safari */
             animation: spin 2s linear infinite;
-        }
-
-        .d-none {
-            display: none !important;
-        }
-
-        .fw-bold {
-            font-weight: 600 !important;
-        }
-
-        /* Safari */
-        @-webkit-keyframes spin {
-            0% {
-                -webkit-transform: rotate(0deg);
-            }
-
-            100% {
-                -webkit-transform: rotate(360deg);
-            }
         }
 
         @keyframes spin {
             0% {
-                transform: rotate(0deg);
+                transform: rotate(0)
             }
 
             100% {
-                transform: rotate(360deg);
+                transform: rotate(360deg)
             }
         }
+
+        /* report-style header (shown only when batch filter active) */
+        #reportHeader {
+            display: none;
+            border: 1px solid #e6e6e6;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
+
+        #reportHeader.show {
+            display: block;
+        }
+
+        #reportHeader .hdr-row {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        #reportHeader .col {
+            flex: 1;
+        }
+
+        #reportHeader .center {
+            flex: 0 0 180px;
+            text-align: center;
+        }
+
+        #reportHeader .kv {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 0;
+        }
+
+        #reportHeader .kv span:first-child {
+            color: #666;
+        }
+
+        #reportHeader .kv span:last-child {
+            font-weight: 600;
+        }
     </style>
-    <div class="d-none spinner-container">
+</head>
+
+<body>
+    <!-- Spinner -->
+    <div class="spinner-container" id="page_spinner">
         <div class="loader"></div>
     </div>
+
     <div class="mx-5 px-5">
+        <!-- Top row: logo + actions -->
         <div class="d-flex justify-content-between align-items-center my-3">
             <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" height="60">
-
             <div class="d-flex">
                 <button class="btn btn-outline-secondary mx-1 fw-bold" id="print_data">Report Data</button>
                 <button type="button" class="btn btn-outline-secondary mx-1 fw-bold" id="del_batch" data-toggle="modal"
@@ -98,29 +128,38 @@
                     data-target="#del_confirm_modal">Delete All</button>
             </div>
         </div>
+
+        <!-- Report-style header (hidden until a batch filter is applied and rows exist) -->
+        <div id="reportHeader">
+            <div class="hdr-row">
+                <!-- LEFT: minimal (no model/project/serial/set rpm/time) -->
+                <div class="col">
+                    <div class="kv"><span>PROCESS PILOT</span><span>ICA</span></div>
+                    <div class="kv"><span>User Name</span><span>ica@ica.com</span></div>
+                    <div class="kv"><span>Batch</span><span id="hdr_batch"></span></div>
+                </div>
+
+                <!-- CENTER: logo -->
+                <div class="center">
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" style="height:60px; opacity:.9;">
+                </div>
+
+                <!-- RIGHT: like the report -->
+                <div class="col">
+                    <div class="kv"><span>Process Start Time</span><span id="hdr_start_time"></span></div>
+                    <div class="kv"><span>Process End Time</span><span id="hdr_end_time"></span></div>
+                    <div class="kv"><span>Date</span><span id="hdr_today"></span></div>
+                    <div class="kv"><span>Interval</span><span id="hdr_interval">1</span></div>
+                </div>
+            </div>
+        </div>
+
         <div class="table-responsive">
             <table id="myTable" class="table w-100">
                 <thead>
                     <tr>
-                        <td class="fw-bold text-start">Model</td>
-                        <td class="text-end" colspan="3">DISPAX REACTOR DR 2000/05</td>
-                        <td class="fw-bold text-start">Date</td>
-                        <td class="text-end" colspan="2" id="current_date"></td>
-                        <td class="fw-bold text-start">Project Number</td>
-                        <td class="text-end" colspan="2">20125620</td>
-                    </tr>
-
-                    <tr>
-                        <td class="fw-bold text-start">Serial Number</td>
-                        <td class="text-end" colspan="3">IB24-1367</td>
-                        <td class="fw-bold text-start">Set RPM</td>
-                        <td class="text-end" colspan="2" id="batch_rpm">{{ data[0].register10 if data else "" }}</td>
-                        <td class="fw-bold text-start">Set Time</td>
-                        <td class="text-end" colspan="2" id="batch_time">{{ data[0].register8 if data else "" }}</td>
-                    </tr>
-                    <tr>
                         <th rowspan="2" class="text-center">SL.NO</th>
-                        <th rowspan="2" class="text-center">Date & Time</th>
+                        <th rowspan="2" class="text-center">Date &amp; Time</th>
                         <th rowspan="2" class="text-center">Batch ID</th>
                         <th class="text-center">Motor Speed</th>
                         <th class="text-center">Motor Current</th>
@@ -129,6 +168,10 @@
                         <th class="text-center">Product Temperature</th>
                         <th class="text-center">Tool Speed</th>
                         <th class="text-center">Actual Time</th>
+                        <th class="text-center">Drive Trip</th>
+                        <th class="text-center">Pressure Low</th>
+                        <th class="text-center">Motor PTC</th>
+                        <th class="text-center">Temp Sensor</th>
                     </tr>
                     <tr>
                         <th class="text-center">(RPM)</th>
@@ -138,241 +181,191 @@
                         <th class="text-center">(°C)</th>
                         <th class="text-center">(RPM)</th>
                         <th class="text-center">(Second)</th>
-                    </tr>
-                    <tr style="display:none;">
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
                         <th></th>
                         <th></th>
                         <th></th>
                         <th></th>
                     </tr>
                 </thead>
-                <tbody>
-
-                    {% for entry in data %}
-                    <tr>
-                        <td>{{ entry.id }}</td>
-                        <td>{{ entry.timestamp }}</td>
-                        <td>{{ entry.register1 }}</td>
-                        <td>{{ entry.register2 }}</td>
-                        <td>{{ entry.register3 }}</td>
-                        <td>{{ entry.register4 }}</td>
-                        <td>{{ entry.register5 }}</td>
-                        <td>{{ entry.register6 }}</td>
-                        <td>{{ entry.register7 }}</td>
-                        <td>{{ entry.register9 }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
+                <tbody></tbody>
             </table>
         </div>
     </div>
-    <!-- Modal -->
-    <!-- <div class="modal fade" id="del_confirm_modal" tabindex="-1" aria-labelledby="del_confirm_modalLabel" aria-hidden="true"> -->
-    <div class="modal" id="del_confirm_modal" tabindex="-1" role="dialog">
+
+    <!-- Confirm Modal -->
+    <div class="modal" id="del_confirm_modal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Are you sure?</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
+                    <button type="button" class="close" data-dismiss="modal"
+                        aria-label="Close"><span>&times;</span></button>
                 </div>
                 <div class="modal-body">
                     <p>Do you really want to delete data?</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">No</button>
-                    <a href="/del_batch" id="del_target"><button type="button" class="btn btn-primary">Yes</button></a>
+                    <a href="/del_all" id="del_target"><button type="button" class="btn btn-primary">Yes</button></a>
                 </div>
             </div>
         </div>
     </div>
-    <!-- Add jQuery before DataTables JS -->
+
+    <!-- JS -->
     <script src="{{ url_for('static', filename='jquery-3.7.0.js') }}"></script>
-    <!-- Add DataTables JS after jQuery -->
     <script src="{{ url_for('static', filename='jquery.dataTables.min.js') }}"></script>
     <script src="{{ url_for('static', filename='bootstrap.min.js') }}"></script>
     <script src="{{ url_for('static', filename='popper.min.js') }}"></script>
-    <!-- <script src="{{ url_for('static', filename='powerbuttons.js') }}"></script> -->
-    <script>
-        $(document).ready(function () {
-            let date = new Date();
-            let current_date = date.toLocaleDateString("en-GB");
-            $("#current_date").text(current_date);
-            $("#print_data").attr("disabled", true);
-            $("#del_batch").attr("disabled", true);
-            var table = $('#myTable').DataTable({
 
-                "processing": true,
-                "serverSide": true,
-                "orderCellsTop": true,
-                "ajax": {
-                    "url": "/filterData",
-                    "type": "GET"
-                },
-                "columns": [
-                    {
-                        "data": 0,
-                        "render": function (data, type, row, meta) {
-                            let pageInfo = $('#myTable').DataTable().page.info();
-                            return ((pageInfo.page * pageInfo.length) + meta.row + 1);
+    <script>
+        function fmtNum(data, type) {
+            if (type !== 'display') return data;
+            var num = parseFloat(data);
+            if (isNaN(num)) return '';
+            var s = num.toFixed(2);
+            while (s.endsWith('0')) s = s.slice(0, -1);
+            if (s.endsWith('.')) s = s.slice(0, -1);
+            return s;
+        }
+        function alarmBadge(val, type) {
+            if (type !== 'display') return val;
+            return (val && Number(val) !== 0) ? 'Active' : '';
+        }
+        function showSpinner(show) {
+            document.getElementById('page_spinner').classList.toggle('show', !!show);
+        }
+
+        // fill today's date in header when shown
+        function todayGB() {
+            const n = new Date(); return n.toLocaleDateString('en-GB') + ' ' + n.toLocaleTimeString('en-GB');
+        }
+
+        $(document).ready(function () {
+            // disable actions at start
+            $("#print_data").prop("disabled", true);
+            $("#del_batch").prop("disabled", true);
+
+            // DataTable server-side
+            var table = $('#myTable').DataTable({
+                processing: true,
+                serverSide: true,
+                orderCellsTop: true,
+                ajax: { url: "/filterData", type: "GET" },
+                columns: [
+                    { // SL.NO
+                        data: 0,
+                        render: function (data, type, row, meta) {
+                            let p = $('#myTable').DataTable().page.info();
+                            return (p.page * p.length) + meta.row + 1;
                         }
                     },
-                    {
-                        "data": 1,
-                        "render": function (data, type, row, meta) {
-                            if (type === 'display') {
-                                let date = new Date(data);
-                                return date.toLocaleString("en-GB");
-                            } else {
-                                return data;
-                            }
+                    { // Date & Time -> timestamp [1]
+                        data: 1,
+                        render: function (data, type) {
+                            if (type !== 'display') return data;
+                            const d = new Date((data || '').replace(' ', 'T'));
+                            return isNaN(d) ? (data || '') : d.toLocaleString('en-GB');
                         }
                     },
-                    { "data": 2 },
-                    {
-                        "data": 3,
-                        "render": function (data, type, row, meta) {
-                            if (type === 'display') {
-                                var num = parseFloat(data).toFixed(2);
-                                while (num.endsWith("0")) {
-                                    num = num.slice(0, -1);
-                                }
-                                if (num.endsWith(".")) num = num.slice(0, -1);
-                                return num;
-                            } else {
-                                return data;
-                            }
-                        }
-                    },
-                    {
-                        "data": 4,
-                        "render": function (data, type, row, meta) {
-                            if (type === 'display') {
-                                var num = parseFloat(data).toFixed(2);
-                                while (num.endsWith("0")) {
-                                    num = num.slice(0, -1);
-                                }
-                                if (num.endsWith(".")) num = num.slice(0, -1);
-                                return num;
-                            } else {
-                                return data;
-                            }
-                        }
-                    },
-                    {
-                        "data": 5,
-                        "render": function (data, type, row, meta) {
-                            if (type === 'display') {
-                                var num = parseFloat(data).toFixed(2);
-                                while (num.endsWith("0")) {
-                                    num = num.slice(0, -1);
-                                }
-                                if (num.endsWith(".")) num = num.slice(0, -1);
-                                return num;
-                            } else {
-                                return data;
-                            }
-                        }
-                    },
-                    { "data": 6 },
-                    {
-                        "data": 7,
-                        "render": function (data, type, row, meta) {
-                            if (type === 'display') {
-                                var num = parseFloat(data).toFixed(2);
-                                while (num.endsWith("0")) {
-                                    num = num.slice(0, -1);
-                                }
-                                if (num.endsWith(".")) num = num.slice(0, -1);
-                                return num;
-                            } else {
-                                return data;
-                            }
-                        }
-                    },
-                    {
-                        "data": 8,
-                        "render": function (data, type, row, meta) {
-                            if (type === 'display') {
-                                var num = parseFloat(data).toFixed(2);
-                                while (num.endsWith("0")) {
-                                    num = num.slice(0, -1);
-                                }
-                                if (num.endsWith(".")) num = num.slice(0, -1);
-                                return num;
-                            } else {
-                                return data;
-                            }
-                        }
-                    },
-                    { "data": 10 }
+                    { data: 4 },           // Batch ID      [4]
+                    { data: 12, render: fmtNum }, // Motor Speed  [12]
+                    { data: 13, render: fmtNum }, // Motor Current[13]
+                    { data: 14, render: fmtNum }, // Motor Torque [14]
+                    { data: 15, render: fmtNum }, // Motor Run Hr [15]
+                    { data: 16, render: fmtNum }, // Product Temp [16]
+                    { data: 17, render: fmtNum }, // Tool Speed   [17]
+                    { data: 19, render: fmtNum }, // Actual Time  [19]
+                    { data: 7, render: alarmBadge }, // Drive Trip
+                    { data: 8, render: alarmBadge }, // Pressure Low
+                    { data: 9, render: alarmBadge }, // Motor PTC
+                    { data: 10, render: alarmBadge }  // Temp Sensor
                 ]
             });
 
+            // Global search (used to filter by batch_id on backend)
+            $('#myTable_filter input').on('keyup', function () {
+                const q = this.value.trim();
+                // when a batch id is entered, load many rows so we can compute start/end
+                if (q.length) table.page.len(1000); else table.page.len(10);
+                table.search(q).draw();
+            });
+
+            // After each draw, update report-style header visibility and content
+            table.on('draw', function () {
+                const q = $('#myTable_filter input').val().trim();
+                const hasRows = table.data().length > 0;
+
+                // toggle header
+                const hdr = document.getElementById('reportHeader');
+                hdr.classList.toggle('show', hasRows && q.length);
+
+                $("#print_data").prop("disabled", !(hasRows && q.length));
+                $("#del_batch").prop("disabled", !(hasRows && q.length));
+
+                if (hasRows && q.length) {
+                    const rows = table.rows().data(); // all rows currently loaded (we set page.len large)
+                    const first = rows[0];
+                    const last = rows[rows.length - 1];
+
+                    // timestamp is at index [1]
+                    const startStr = first[1];
+                    const endStr = last[1];
+
+                    // fill header
+                    $("#hdr_batch").text(q);
+                    $("#hdr_today").text(todayGB());
+
+                    // pretty-print times
+                    function toGB(ts) {
+                        const d = new Date((ts || '').replace(' ', 'T'));
+                        return isNaN(d) ? (ts || '') : d.toLocaleString('en-GB');
+                    }
+                    $("#hdr_start_time").text(toGB(startStr));
+                    $("#hdr_end_time").text(toGB(endStr));
+                } else {
+                    $("#hdr_batch").text("");
+                    $("#hdr_today").text("");
+                    $("#hdr_start_time").text("");
+                    $("#hdr_end_time").text("");
+                }
+            });
+
+            // Report PDF
             $('#print_data').on('click', function (e) {
                 e.preventDefault();
-
-                //Set the filename for the PDF file
-                let date = new Date().toISOString().replace("T", "_").replaceAll(":", "-").split(".")[0];
-                let filename = `report_data_${date}.pdf`;
-                let batch_id = $('#myTable_filter input').val();
-
-                if (batch_id) {
-                    let url = `/report?filename=${filename}&batch_id=${batch_id}`;
-                    $(".spinner-container").removeClass("d-none");
-                    fetch(url, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json; charset=utf-8'
-                        },
+                const q = $('#myTable_filter input').val().trim();
+                if (!q) return;
+                let dt = new Date().toISOString().replace("T", "_").replaceAll(":", "-").split(".")[0];
+                let filename = `report_data_${dt}.pdf`;
+                let url = `/report?filename=${encodeURIComponent(filename)}&batch_id=${encodeURIComponent(q)}`;
+                showSpinner(true);
+                fetch(url, { method: 'GET' })
+                    .then(r => r.blob())
+                    .then(blob => {
+                        const downloadUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+                        const a = document.createElement("a");
+                        a.href = downloadUrl; a.download = filename;
+                        document.body.appendChild(a); a.click(); a.remove();
+                        URL.revokeObjectURL(downloadUrl);
                     })
-                        .then(response => response.blob())
-                        .then(response => {
-                            const blob = new Blob([response], { type: 'application/pdf' });
-                            const downloadUrl = URL.createObjectURL(blob);
-                            const a = document.createElement("a");
-                            a.href = downloadUrl;
-                            a.download = filename;
-                            document.body.appendChild(a);
-                            a.click();
-                            $(".spinner-container").addClass("d-none");
-                        })
-                }
+                    .finally(() => showSpinner(false));
             });
 
-            $('#myTable_filter input').on('keyup', function () {
-                table
-                    .columns(2) // replace 'columnIndex' with the index of Register1 column  
-                    .search(this.value)
-                    .draw();
-                if (table.data().count() === 0 || $('#myTable_filter input').val() === "") {
-                    $("#print_data").attr("disabled", true);
-                    $("#del_batch").attr("disabled", true);
-                    $("#batch_rpm").text("");
-                    $("#batch_time").text("");
-                } else {
-                    $("#print_data").attr("disabled", false);
-                    $("#del_batch").attr("disabled", false);
-                    $("#batch_rpm").text(table.data().eq(0)[11]);
-                    $("#batch_time").text(table.data().eq(0)[9]);
-                }
+            // Delete Batch (pass ?batch_id=...)
+            $('#del_batch').on('click', function () {
+                const bid = $('#myTable_filter input').val().trim();
+                $('#del_confirm_modal .modal-body p').text(
+                    "Do you really want to delete Batch ID " + bid + " data?"
+                );
+                $('#del_target').attr("href", "/del_batch?batch_id=" + encodeURIComponent(bid));
             });
 
-            $('#del_batch').on('click', function (e) {
-                $('#del_confirm_modal .modal-body p').text("Do you really want to delete Batch ID " + $('#myTable_filter input').val() + " data?");
-                $('#del_target').attr("href", "/del_batch");
-            })
-            $('#del_all').on('click', function (e) {
+            // Delete All
+            $('#del_all').on('click', function () {
                 $('#del_confirm_modal .modal-body p').text("Do you really want to delete all data?");
                 $('#del_target').attr("href", "/del_all");
-            })
+            });
         });
     </script>
 </body>

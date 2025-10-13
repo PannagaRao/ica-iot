@@ -30,6 +30,7 @@ class PDF(FPDF):
             f"User Name : ica@ica.com"
         ]
 
+        # Use the first and last row timestamps for start/end
         right_info = [
             f"Process Start Time : {data[0]['Date & Time']}",
             f"Process End Time   : {data[-1]['Date & Time']}",
@@ -37,16 +38,13 @@ class PDF(FPDF):
             f"Interval : 1"
         ]
 
-        # Calculate column widths
-        col_width = self.w / 3  # 3 sections: left, center, right
-
         # Ensure logo path exists
         img_path = os.path.join(os.getcwd(), "static", "logo.png")
 
         self.set_font("Arial", "", 11)
 
         # page usable width (excluding margins)
-        page_width = self.w - 20  
+        page_width = self.w - 20
         left_w = page_width * 0.30
         center_w = page_width * 0.30
         right_w = page_width * 0.40
@@ -76,7 +74,6 @@ class PDF(FPDF):
                 x_now = self.get_x()
                 y_now = self.get_y()
                 self.multi_cell(right_w, 8, right_info[i], 0, "R")
-                # after multi_cell we drop to next line, so reset X for next row
                 self.set_xy(x_now + right_w, y_now)
                 self.ln(8)
             else:
@@ -84,7 +81,7 @@ class PDF(FPDF):
 
         self.ln(10)
 
-        # ---- Table Header ----
+        # ---- Table Header (NO Batch ID as requested) ----
         self.set_font("Arial", "B", 9)
         headers = [
             "S.no", "Date(DD/MM/yyyy)", "Time(HH:MM:SS)",
@@ -95,38 +92,51 @@ class PDF(FPDF):
         widths = [12, 28, 28, 25, 20, 32, 28, 28, 32, 28, 28, 28, 32]
 
         table_width = sum(widths)
-        page_width = self.w - 20   # account for margins
+        page_width = self.w - 20
         x_start = (page_width - table_width) / 2 + 10
-
-        self.set_x(x_start)  # <-- center start
+        self.set_x(x_start)
         for h, w in zip(headers, widths):
             self.cell(w, 8, h, 1, 0, "C")
         self.ln()
 
         # ---- Table Body ----
         self.set_font("Arial", "", 9)
+
+        def fmt_num(v):
+            try:
+                return str(round(float(v), 2))
+            except Exception:
+                return ""
+
         for i, row in enumerate(data, start=1):
+            # "Date & Time" provided by /report (client_new.py)
             try:
                 dt_obj = datetime.strptime(row["Date & Time"], "%Y-%m-%d %H:%M:%S")
                 date_str = dt_obj.strftime("%d/%m/%Y")
                 time_str = dt_obj.strftime("%H:%M:%S")
-            except:
-                date_str, time_str = row["Date & Time"], ""
+            except Exception:
+                date_str, time_str = row.get("Date & Time", ""), ""
+
+            # alarm flags are separate columns (0/1)
+            press_low  = "Active" if row.get("Pressure Low Alarm", 0) else ""
+            drive_trip = "Active" if row.get("Drive Trip Alarm", 0) else ""
+            motor_ptc  = "Active" if row.get("Motor PTC Alarm", 0) else ""
+            temp_sens  = "Active" if row.get("Temperature Sensor Alarm", 0) else ""
 
             values = [
                 str(i),
                 date_str,
                 time_str,
-                str(round(row["Motor Speed"], 2)),
-                str(round(row["Motor Torque"], 2)),
-                str(round(row["Tool Speed"], 2)),
+                fmt_num(row.get("Motor Speed")),
+                fmt_num(row.get("Motor Torque")),
+                fmt_num(row.get("Tool Speed")),
                 "",  # Voltage placeholder
-                str(round(row["Motor Current"], 2)),
-                str(round(row["Product Temperature"], 2)),
-                "Active" if "Pressure Low" in row["Remarks"] else "",
-                "Active" if "Drive Trip" in row["Remarks"] else "",
-                "Active" if "Motor PTC" in row["Remarks"] else "",
-                "Active" if "Temperature Sensor" in row["Remarks"] else ""
+                fmt_num(row.get("Motor Current")),
+                fmt_num(row.get("Product Temperature")),
+                press_low,
+                drive_trip,
+                motor_ptc,
+                temp_sens
             ]
 
             self.set_x(x_start)
@@ -137,22 +147,40 @@ class PDF(FPDF):
         # ---- Save PDF ----
         self.output(filename)
 
-def print_db_to_pdf(batch_data, process_number=None, start_time=None, serial_number=None, end_time=None,
-                    time_interval=None, file_counter=0):
+
+def print_db_to_pdf(
+    batch_data,
+    filename_override=None,
+    process_number=None,
+    start_time=None,
+    serial_number=None,
+    end_time=None,
+    time_interval=None,
+    file_counter=0
+):
+    """
+    Render a PDF for the given batch_data (list of dict rows).
+    - filename_override: optional custom filename (e.g., from /report?filename=...)
+    - All other metadata args are kept for compatibility (unused in table).
+    """
     print("printing....")
 
-    pdf = PDF('L', 'mm', 'A3')# 'L' for landscape mode, 'mm' for unit of measure, 'A3' for page size
+    pdf = PDF('L', 'mm', 'A3')  # Landscape, millimeters, A3
     pdf.setValues(process_number, start_time, serial_number, end_time, time_interval)
     pdf.add_page()
 
-    # Set the filename for the PDF file
-    now = datetime.now()
-    now_str = now.strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f'report_data_{now_str}.pdf'
+    # Use provided filename or generate one
+    if filename_override and isinstance(filename_override, str) and filename_override.strip():
+        # Ensure .pdf extension
+        if not filename_override.lower().endswith(".pdf"):
+            filename = f"{filename_override}.pdf"
+        else:
+            filename = filename_override
+    else:
+        now = datetime.now()
+        now_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f'report_data_{now_str}.pdf'
 
     pdf.add_table(batch_data, filename, file_counter)
-    # Set the MIME type for the PDF file
     mimetype = 'application/pdf'
-
-    # Return the PDF file as a response
     return send_file(filename, mimetype=mimetype, download_name=filename, as_attachment=True)
