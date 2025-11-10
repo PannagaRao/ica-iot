@@ -1,0 +1,20 @@
+[Unit]
+Description=Automatically run client_new.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/ica
+
+ExecStart=/home/pi/ica/venv/bin/python /home/pi/ica/client_new.py
+
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
