@@ -30,7 +30,7 @@ def build_base_values(batch_id):
         random.choice([0.0, 1.0]),         # 13: Pressure Low Alarm
         random.choice([0.0, 1.0]),         # 14: Motor PTC Alarm
         random.choice([0.0, 1.0]),         # 15: Temp Sensor Alarm
-        float(random.randint(1, 5)),       # 16: Interval
+        10,                                # 16: Interval - sec
         0.0,                               # 17: Process Start
         0.0,                               # 18: Process End
     ]

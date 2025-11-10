@@ -8,20 +8,18 @@ class PDF(FPDF):
     start_time = ""
     serial_number = ""
     end_time = ""
-    time_interval = ""
 
-    def setValues(self, process_number, start_time, serial_number, end_time, time_interval):
+    def setValues(self, process_number, start_time, serial_number, end_time):
         self.process_number = process_number
         self.start_time = start_time
         self.serial_number = serial_number
         self.end_time = end_time
-        self.time_interval = time_interval
 
     def header(self):
         self.set_font('Arial', 'B', 8)
         self.cell(0, 13, '', 0, 1, 'C')
 
-    def add_table(self, data, filename, file_counter):
+    def add_table(self, data, filename, file_counter, interval=None):
         # ---- Header Row with Left Info, Logo, Right Info ----
         left_info = [
             f"PROCESS PILOT : ICA",
@@ -35,7 +33,7 @@ class PDF(FPDF):
             f"Process Start Time : {data[0]['Date & Time']}",
             f"Process End Time   : {data[-1]['Date & Time']}",
             f"Date : {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
-            f"Interval : 1"
+            f"Interval : {interval if interval is not None else '-'}",
         ]
 
         # Ensure logo path exists
@@ -86,7 +84,7 @@ class PDF(FPDF):
         headers = [
             "S.no", "Date(DD/MM/yyyy)", "Time(HH:MM:SS)",
             "Motor Rpm", "Torque", "Tool Speed(RPM)",
-            "Voltage(v)", "Current(Amp)", "Temperature(c)",
+            "Current(Amp)", "Temperature(c)",
             "Pressure Low", "Drive Trip", "Motor PTC", "Temp Sensor"
         ]
         widths = [12, 28, 28, 25, 20, 32, 28, 28, 32, 28, 28, 28, 32]
@@ -130,7 +128,6 @@ class PDF(FPDF):
                 fmt_num(row.get("Motor Speed")),
                 fmt_num(row.get("Motor Torque")),
                 fmt_num(row.get("Tool Speed")),
-                "",  # Voltage placeholder
                 fmt_num(row.get("Motor Current")),
                 fmt_num(row.get("Product Temperature")),
                 press_low,
@@ -155,8 +152,8 @@ def print_db_to_pdf(
     start_time=None,
     serial_number=None,
     end_time=None,
-    time_interval=None,
-    file_counter=0
+    file_counter=0,
+    interval=None
 ):
     """
     Render a PDF for the given batch_data (list of dict rows).
@@ -166,7 +163,7 @@ def print_db_to_pdf(
     print("printing....")
 
     pdf = PDF('L', 'mm', 'A3')  # Landscape, millimeters, A3
-    pdf.setValues(process_number, start_time, serial_number, end_time, time_interval)
+    pdf.setValues(process_number, start_time, serial_number, end_time)
     pdf.add_page()
 
     # Use provided filename or generate one
@@ -181,6 +178,6 @@ def print_db_to_pdf(
         now_str = now.strftime("%Y-%m-%d_%H-%M-%S")
         filename = f'report_data_{now_str}.pdf'
 
-    pdf.add_table(batch_data, filename, file_counter)
+    pdf.add_table(batch_data, filename, file_counter, interval)
     mimetype = 'application/pdf'
     return send_file(filename, mimetype=mimetype, download_name=filename, as_attachment=True)

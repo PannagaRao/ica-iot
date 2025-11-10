@@ -120,6 +120,7 @@ def view_data():
             "product_temperature": getattr(r, "register6", None),
             "tool_speed": getattr(r, "register7", None),
             "actual_time": getattr(r, "register9", None),
+            "interval": getattr(r, "register16", None),
             "drive_trip_alarm": drive_trip,
             "pressure_low_alarm": pressure_low,
             "motor_ptc_alarm": motor_ptc,
@@ -138,46 +139,59 @@ def modbus_client():
             regs_l = c.read_holding_registers(parameters.REG_ADDR, parameters.REG_NB)
             if not regs_l:
                 print("[Modbus] Read error - no data received")
-                time.sleep(parameters.SLEEP_TIME)
+                time.sleep(parameters.READ_TIME)
                 continue
 
-            # Convert 16-bit regs to IEEE754 float pairs (BE words + BE float)
+            # --- Convert 16-bit register pairs into floats (big-endian) ---
             regs_float = []
             for i in range(0, len(regs_l), 2):
                 mypack = struct.pack('>HH', regs_l[i + 1], regs_l[i])
                 f = struct.unpack('>f', mypack)
                 regs_float.append(f[0])
 
-            # Derived fields
-            batch_id = str(int(round(regs_float[0]))) if len(regs_float) >= 1 else ""
-            process_start = int(round(regs_float[16])) if len(regs_float) >= 17 else 0
-            process_end   = int(round(regs_float[17])) if len(regs_float) >= 18 else 0
+            print("[Modbus] Decoded floats:", regs_float)
 
-            now = datetime.now()
-            ts = now.strftime("%Y-%m-%d %H:%M:%S")
-            dt = now.strftime("%Y-%m-%d")
-            tm = now.strftime("%H:%M:%S")
+            # --- Trigger condition → use Machine On (register 11) ---
+            if len(regs_float) >= 11 and round(regs_float[10]) == 1:
+                print("[DB] Machine ON detected → inserting row into database")
 
-            row_payload = {
-                "timestamp": ts,
-                "date": dt,
-                "time": tm,
-                "batch_id": batch_id,
-                "process_start": process_start,
-                "process_end": process_end,
-                **{f"register{i}": regs_float[i - 1] for i in range(1, min(19, len(regs_float) + 1))}
-            }
+                # Derived fields
+                batch_id = str(int(round(regs_float[0]))) if len(regs_float) >= 1 else ""
+                interval_value = regs_float[15] if len(regs_float) >= 16 else None  # register16
+                process_start  = int(round(regs_float[16])) if len(regs_float) >= 17 else 0
+                process_end    = int(round(regs_float[17])) if len(regs_float) >= 18 else 0
 
-            session = Session()
-            session.execute(register_data.insert().values(**row_payload))
-            session.commit()
-            session.close()
-            print(f"[DB] Inserted row for batch {batch_id} (start={process_start}, end={process_end})")
+                now = datetime.now()
+                ts = now.strftime("%Y-%m-%d %H:%M:%S")
+                dt = now.strftime("%Y-%m-%d")
+                tm = now.strftime("%H:%M:%S")
+
+                # --- Prepare full row payload ---
+                row_payload = {
+                    "timestamp": ts,
+                    "date": dt,
+                    "time": tm,
+                    "batch_id": batch_id,
+                    "process_start": process_start,
+                    "process_end": process_end,
+                    "register16": interval_value,
+                    **{f"register{i}": regs_float[i - 1] for i in range(1, min(19, len(regs_float) + 1))}
+                }
+
+                # --- Insert into DB ---
+                session = Session()
+                session.execute(register_data.insert().values(**row_payload))
+                session.commit()
+                session.close()
+                print(f"[DB] Inserted row for batch {batch_id} (Machine On=1)")
+
+            else:
+                print("[DB] Machine OFF (trigger bit = 0) → skipping insert")
 
         except Exception as e:
             print(f"[Modbus] Exception: {e}")
 
-        time.sleep(parameters.SLEEP_TIME)
+        time.sleep(0.5)
 
 
 # ---------------- DB Ops ----------------
@@ -242,7 +256,6 @@ def report():
             "Motor Torque": getattr(row, "register4", None),
             "Motor Run Hour": getattr(row, "register5", None),
             "Product Temperature": getattr(row, "register6", None),
-            "Tool Speed": getattr(row, "register7", None),
             "Actual Time": getattr(row, "register9", None),
             # four separate alarm columns (0/1)
             "Drive Trip Alarm": drive_trip,
@@ -254,7 +267,8 @@ def report():
 
     if report_data:
         # Updated client.print_db_to_pdf supports optional filename override
-        return print_db_to_pdf(report_data, filename_override=filename)
+        interval_value = batch_rows[0].register16 if batch_rows else None
+        return print_db_to_pdf(report_data, filename_override=filename, interval=interval_value)
 
     # fallback to view if nothing to report
     return redirect("/view")
@@ -340,4 +354,4 @@ if __name__ == '__main__':
     print("[APP] Starting Modbus background process and Flask server on port 5050")
     modbus_proc = multiprocessing.Process(target=modbus_client)
     modbus_proc.start()
-    app.run(debug=True, host="127.0.0.1", port=5050, use_reloader=False)
+    app.run(debug=True, host="0.0.0.0", port=5050, use_reloader=False)

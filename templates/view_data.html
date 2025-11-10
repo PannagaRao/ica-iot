@@ -119,9 +119,9 @@
     <div class="mx-5 px-5">
         <!-- Top row: logo + actions -->
         <div class="d-flex justify-content-between align-items-center my-3">
-            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" height="60">
+            <img id="top_logo" src="{{ url_for('static', filename='logo.png') }}" alt="Logo" style="width:120px;height:60px;object-fit:contain;">
             <div class="d-flex">
-                <button class="btn btn-outline-secondary mx-1 fw-bold" id="print_data">Report Data</button>
+                <button class="btn btn-outline-secondary mx-1 fw-bold" id="export_pdf">Report Data</button>
                 <button type="button" class="btn btn-outline-secondary mx-1 fw-bold" id="del_batch" data-toggle="modal"
                     data-target="#del_confirm_modal">Delete Batch</button>
                 <button type="button" class="btn btn-outline-secondary mx-1 fw-bold" id="del_all" data-toggle="modal"
@@ -137,6 +137,8 @@
                     <div class="kv"><span>PROCESS PILOT</span><span>ICA</span></div>
                     <div class="kv"><span>User Name</span><span>ica@ica.com</span></div>
                     <div class="kv"><span>Batch</span><span id="hdr_batch"></span></div>
+                    <div class="kv"><span>Set Time</span><span id="hdr_set_time"></span></div>
+                    <div class="kv"><span>Set Tool RPM</span><span id="hdr_set_rpm"></span></div>
                 </div>
 
                 <!-- CENTER: logo -->
@@ -149,7 +151,7 @@
                     <div class="kv"><span>Process Start Time</span><span id="hdr_start_time"></span></div>
                     <div class="kv"><span>Process End Time</span><span id="hdr_end_time"></span></div>
                     <div class="kv"><span>Date</span><span id="hdr_today"></span></div>
-                    <div class="kv"><span>Interval</span><span id="hdr_interval">1</span></div>
+                    <div class="kv"><span>Interval</span><span id="hdr_interval"></span></div>
                 </div>
             </div>
         </div>
@@ -161,17 +163,14 @@
                         <th rowspan="2" class="text-center">SL.NO</th>
                         <th rowspan="2" class="text-center">Date &amp; Time</th>
                         <th rowspan="2" class="text-center">Batch ID</th>
+                        <th class="text-center">Tool Speed</th>
                         <th class="text-center">Motor Speed</th>
                         <th class="text-center">Motor Current</th>
                         <th class="text-center">Motor Torque</th>
                         <th class="text-center">Motor Run Hour</th>
                         <th class="text-center">Product Temperature</th>
-                        <th class="text-center">Tool Speed</th>
                         <th class="text-center">Actual Time</th>
-                        <th class="text-center">Drive Trip</th>
-                        <th class="text-center">Pressure Low</th>
-                        <th class="text-center">Motor PTC</th>
-                        <th class="text-center">Temp Sensor</th>
+                        <th class="text-center">Remarks</th> <!-- NEW single column -->
                     </tr>
                     <tr>
                         <th class="text-center">(RPM)</th>
@@ -181,10 +180,8 @@
                         <th class="text-center">(°C)</th>
                         <th class="text-center">(RPM)</th>
                         <th class="text-center">(Second)</th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
-                        <th></th>
+                        <th class="text-center"></th> <!-- sublabel for Alarms -->
+
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -217,6 +214,8 @@
     <script src="{{ url_for('static', filename='jquery.dataTables.min.js') }}"></script>
     <script src="{{ url_for('static', filename='bootstrap.min.js') }}"></script>
     <script src="{{ url_for('static', filename='popper.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/html2pdf/html2pdf.bundle.min.js') }}"></script>
+
 
     <script>
         function fmtNum(data, type) {
@@ -241,9 +240,32 @@
             const n = new Date(); return n.toLocaleDateString('en-GB') + ' ' + n.toLocaleTimeString('en-GB');
         }
 
+        function getStartEndFromFlags(rows) {
+            const START_IDX = 5; // process_start
+            const END_IDX = 6; // process_end
+            const TS_IDX = 1; // timestamp
+
+            let startTs = null;
+            let endTs = null;
+
+            // first row where process_start == 1
+            const startRow = rows.find(r => Number(r[START_IDX]) === 1);
+            if (startRow) startTs = startRow[TS_IDX];
+
+            // last row where process_end == 1
+            const endRow = [...rows].reverse().find(r => Number(r[END_IDX]) === 1);
+            if (endRow) endTs = endRow[TS_IDX];
+
+            // fallbacks if flags weren’t found
+            if (!startTs && rows.length) startTs = rows[0][TS_IDX];
+            if (!endTs && rows.length) endTs = rows[rows.length - 1][TS_IDX];
+
+            return { startTs, endTs };
+        }
+
         $(document).ready(function () {
             // disable actions at start
-            $("#print_data").prop("disabled", true);
+            $("#export_pdf").prop("disabled", true);
             $("#del_batch").prop("disabled", true);
 
             // DataTable server-side
@@ -251,7 +273,15 @@
                 processing: true,
                 serverSide: true,
                 orderCellsTop: true,
-                ajax: { url: "/filterData", type: "GET" },
+                ajax: {
+                    url: "/filterData",
+                    type: "GET",
+                    dataSrc: function (json) {
+                        console.log('[/filterData] raw payload:', json);        // <— here
+                        console.log('[/filterData] rows:', json.data?.length);  // count
+                        return json.data; // important!
+                    }
+                },
                 columns: [
                     { // SL.NO
                         data: 0,
@@ -269,19 +299,221 @@
                         }
                     },
                     { data: 4 },           // Batch ID      [4]
+                    { data: 17, render: fmtNum }, // Tool Speed   [17]
                     { data: 12, render: fmtNum }, // Motor Speed  [12]
                     { data: 13, render: fmtNum }, // Motor Current[13]
                     { data: 14, render: fmtNum }, // Motor Torque [14]
                     { data: 15, render: fmtNum }, // Motor Run Hr [15]
                     { data: 16, render: fmtNum }, // Product Temp [16]
-                    { data: 17, render: fmtNum }, // Tool Speed   [17]
                     { data: 19, render: fmtNum }, // Actual Time  [19]
-                    { data: 7, render: alarmBadge }, // Drive Trip
-                    { data: 8, render: alarmBadge }, // Pressure Low
-                    { data: 9, render: alarmBadge }, // Motor PTC
-                    { data: 10, render: alarmBadge }  // Temp Sensor
+                    {
+                        data: null,
+                        render: function (_data, type, row) {
+                            // For ordering/searching, return a concise machine-friendly string
+                            const activeList = [];
+                            const fields = [
+                                { idx: 7, name: 'Drive Trip' },
+                                { idx: 8, name: 'Pressure Low' },
+                                { idx: 9, name: 'Motor PTC' },
+                                { idx: 10, name: 'Temp Sensor' }
+                            ];
+
+                            for (const f of fields) {
+                                const v = row[f.idx];
+                                if (v !== null && v !== undefined && Number(v) !== 0) {
+                                    activeList.push(`${f.name} Active`);
+                                }
+                            }
+
+                            if (type !== 'display') {
+                                // For sort/search, join with pipe for stability
+                                return activeList.join(' | ');
+                            }
+
+                            // Display: comma-separated, empty if none
+                            return activeList.join(', ');
+                        }
+                    }
                 ]
             });
+            // Export the current filtered batch to PDF (client-side, offline)
+            async function exportCurrentViewPDF(table) {
+                const q = $('#myTable_filter input').val().trim();
+                if (!q) return;
+
+                // --- Ensure we have "all" rows for this batch loaded (serverSide=true) ---
+                // Save current page length + page index
+                const infoBefore = table.page.info();
+                const oldLen = infoBefore.length;
+                const oldPage = infoBefore.page;
+
+                // If you expect more than 1k rows for a batch, raise this
+                const TEMP_LEN = 100000;
+
+                // Increase page length and redraw to force the server to return many rows for this search
+                table.page.len(TEMP_LEN).draw();
+
+                // Wait until draw completes (DataTables fires 'draw' event)
+                await new Promise(resolve => {
+                    const once = () => { table.off('draw', once); resolve(); };
+                    table.on('draw', once);
+                });
+
+                // Now we should have all (or up to TEMP_LEN) filtered rows in the client
+                const rows = table.rows({ search: 'applied' }).data().toArray();
+                if (!rows.length) {
+                    // Restore table state and bail
+                    table.page.len(oldLen).draw();
+                    return;
+                }
+
+                // --- Helpers (match your renderers) ---
+                function numFmt(x) {
+                    const f = parseFloat(x);
+                    if (isNaN(f)) return '';
+                    let s = f.toFixed(2);
+                    while (s.endsWith('0')) s = s.slice(0, -1);
+                    if (s.endsWith('.')) s = s.slice(0, -1);
+                    return s;
+                }
+                function toGB(ts) {
+                    const d = new Date((ts || '').replace(' ', 'T'));
+                    return isNaN(d) ? (ts || '') : d.toLocaleString('en-GB');
+                }
+                function alarmList(r) {
+                    const items = [];
+                    if (r[7] && Number(r[7]) !== 0) items.push('Drive Trip Active');
+                    if (r[8] && Number(r[8]) !== 0) items.push('Pressure Low Active');
+                    if (r[9] && Number(r[9]) !== 0) items.push('Motor PTC Active');
+                    if (r[10] && Number(r[10]) !== 0) items.push('Temp Sensor Active');
+                    return items.join(', ');
+                }
+
+                // Start/End time from first/last row in this fetched set
+                const { startTs: startStr, endTs: endStr } = getStartEndFromFlags(rows);
+                
+
+                // --- Build a clean DOM fragment (header + plain table) for PDF ---
+                const wrapper = document.createElement('div');
+                wrapper.style.fontFamily = 'Arial, sans-serif';
+
+                // Clone your report header so the PDF matches the UI
+                const header = document.getElementById('reportHeader').cloneNode(true);
+                header.classList.add('show'); // ensure visible
+                header.querySelector('#hdr_batch') && (header.querySelector('#hdr_batch').textContent = q);
+                header.querySelector('#hdr_today') && (header.querySelector('#hdr_today').textContent = new Date().toLocaleString('en-GB'));
+                header.querySelector('#hdr_start_time') && (header.querySelector('#hdr_start_time').textContent = toGB(startStr));
+                header.querySelector('#hdr_end_time') && (header.querySelector('#hdr_end_time').textContent = toGB(endStr));
+                // header.querySelector('#hdr_interval') && (header.querySelector('#hdr_interval').textContent = String(interval));
+                header.style.pageBreakInside = 'avoid';
+                wrapper.appendChild(header);
+
+                
+
+                const tableEl = document.createElement('table');
+                tableEl.style.width = '100%';
+                tableEl.style.borderCollapse = 'collapse';
+                tableEl.style.fontSize = '12px';
+                tableEl.style.tableLayout = 'fixed'; // << prevent column reflow
+
+                // Repeat header each page in PDF
+                const style = document.createElement('style');
+                style.textContent = `
+                    thead { display: table-header-group; }
+                    tr { break-inside: avoid; page-break-inside: avoid; }
+                    th, td { word-break: break-word; white-space: normal; }
+                `;
+                wrapper.appendChild(style);
+
+                function th(txt) {
+                    const e = document.createElement('th');
+                    e.textContent = txt;
+                    e.style.border = '0.6px solid #333';
+                    e.style.padding = '6px';
+                    e.style.textAlign = 'center';
+                    e.style.background = '#f2f2f2';
+                    return e;
+                }
+                function td(txt) {
+                    const e = document.createElement('td');
+                    e.textContent = txt == null ? '' : String(txt);
+                    e.style.border = '0.6px solid #333'; // was 1px
+                    e.style.padding = '6px';
+                    e.style.textAlign = 'center';
+                    return e;
+                }
+
+                // Header row (with merged "Alarms" column)
+                const COL_W = ['5%', '11%', '8%', '9%', '9%', '9%', '9%', '10%', '10%', '8%', '12%'];
+                const thead = document.createElement('thead');
+                const trh = document.createElement('tr');
+                ['SL.NO', 'Date & Time', 'Batch ID',
+                    'Tool Speed (RPM)', 'Motor Speed (Amps)', 'Motor Current (%)',
+                    'Motor Torque (%)', 'Motor Run Hour (Hour)', 'Product Temp (°C)',
+                    'Actual Time (RPM)', 'Remarks'
+                ].forEach((t, idx) => {
+                    const e = th(t);
+                    e.style.width = COL_W[idx];     // << set width
+                    trh.appendChild(e);
+                });
+                thead.appendChild(trh);
+                tableEl.appendChild(thead);
+
+                // Body
+                const tbody = document.createElement('tbody');
+                rows.forEach((r, i) => {
+                    const tr = document.createElement('tr');
+                    tr.style.pageBreakInside = 'avoid';
+                    tr.style.breakInside = 'avoid';
+                    const cells = [
+                        String(i + 1),
+                        toGB(r[1]),
+                        r[4],
+                        numFmt(r[17]),
+                        numFmt(r[12]),
+                        numFmt(r[13]),
+                        numFmt(r[14]),
+                        numFmt(r[15]),
+                        numFmt(r[16]),
+                        numFmt(r[19]),
+                        alarmList(r)
+                    ];
+                    cells.forEach(c => tr.appendChild(td(c)));
+                    tbody.appendChild(tr);
+                });
+                tableEl.appendChild(tbody);
+                wrapper.appendChild(tableEl);
+
+                // --- Generate PDF (offline) ---
+                const dt = new Date().toISOString().replace('T', '_').replaceAll(':', '-').split('.')[0];
+                const filename = `report_view_${q}_${dt}.pdf`;
+
+                const opt = {
+                    margin: [5, 8, 8, 8],
+                    filename: filename,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+                    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr'] } // << important
+                };
+
+                await html2pdf().from(wrapper).set(opt).save();
+
+                // --- Restore table to previous state ---
+                table.page.len(oldLen).draw();
+                // Optionally return to old page index (DataTables may reset to 0 after len change)
+                await new Promise(resolve => {
+                    const once = () => { table.off('draw', once); resolve(); };
+                    table.on('draw', once);
+                });
+                table.page(oldPage).draw(false);
+            }
+
+            // Wire the button
+            $('#export_pdf').on('click', function () {
+                exportCurrentViewPDF($('#myTable').DataTable());
+            });
+
 
             // Global search (used to filter by batch_id on backend)
             $('#myTable_filter input').on('keyup', function () {
@@ -294,23 +526,29 @@
             // After each draw, update report-style header visibility and content
             table.on('draw', function () {
                 const q = $('#myTable_filter input').val().trim();
+                $('#top_logo').toggleClass('invisible', q.length > 0);
                 const hasRows = table.data().length > 0;
 
                 // toggle header
                 const hdr = document.getElementById('reportHeader');
                 hdr.classList.toggle('show', hasRows && q.length);
 
-                $("#print_data").prop("disabled", !(hasRows && q.length));
+                $("#export_pdf").prop("disabled", !(hasRows && q.length));
                 $("#del_batch").prop("disabled", !(hasRows && q.length));
 
                 if (hasRows && q.length) {
                     const rows = table.rows().data(); // all rows currently loaded (we set page.len large)
+                    const allRows = table.rows({ search: 'applied' }).data().toArray();
+                    const { startTs, endTs } = getStartEndFromFlags(allRows);
                     const first = rows[0];
                     const last = rows[rows.length - 1];
 
                     // timestamp is at index [1]
                     const startStr = first[1];
                     const endStr = last[1];
+                    const interval = first[26];
+                    const setTimeVal = first[18];
+                    const setRpmVal = first[20];
 
                     // fill header
                     $("#hdr_batch").text(q);
@@ -321,36 +559,42 @@
                         const d = new Date((ts || '').replace(' ', 'T'));
                         return isNaN(d) ? (ts || '') : d.toLocaleString('en-GB');
                     }
-                    $("#hdr_start_time").text(toGB(startStr));
-                    $("#hdr_end_time").text(toGB(endStr));
+                    $("#hdr_start_time").text(toGB(startTs));
+                    $("#hdr_end_time").text(toGB(endTs));
+                    $("#hdr_interval").text(String(interval));
+                    $("#hdr_set_time").text(String(setTimeVal));
+                    $("#hdr_set_rpm").text(String(setRpmVal));
                 } else {
                     $("#hdr_batch").text("");
                     $("#hdr_today").text("");
                     $("#hdr_start_time").text("");
                     $("#hdr_end_time").text("");
+                    $("#hdr_interval").text("");
+                    $("#hdr_set_time").text("");
+                    $("#hdr_set_rpm").text("");
                 }
             });
 
             // Report PDF
-            $('#print_data').on('click', function (e) {
-                e.preventDefault();
-                const q = $('#myTable_filter input').val().trim();
-                if (!q) return;
-                let dt = new Date().toISOString().replace("T", "_").replaceAll(":", "-").split(".")[0];
-                let filename = `report_data_${dt}.pdf`;
-                let url = `/report?filename=${encodeURIComponent(filename)}&batch_id=${encodeURIComponent(q)}`;
-                showSpinner(true);
-                fetch(url, { method: 'GET' })
-                    .then(r => r.blob())
-                    .then(blob => {
-                        const downloadUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-                        const a = document.createElement("a");
-                        a.href = downloadUrl; a.download = filename;
-                        document.body.appendChild(a); a.click(); a.remove();
-                        URL.revokeObjectURL(downloadUrl);
-                    })
-                    .finally(() => showSpinner(false));
-            });
+            // $('#print_data').on('click', function (e) {
+            //     e.preventDefault();
+            //     const q = $('#myTable_filter input').val().trim();
+            //     if (!q) return;
+            //     let dt = new Date().toISOString().replace("T", "_").replaceAll(":", "-").split(".")[0];
+            //     let filename = `report_data_${dt}.pdf`;
+            //     let url = `/report?filename=${encodeURIComponent(filename)}&batch_id=${encodeURIComponent(q)}`;
+            //     showSpinner(true);
+            //     fetch(url, { method: 'GET' })
+            //         .then(r => r.blob())
+            //         .then(blob => {
+            //             const downloadUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+            //             const a = document.createElement("a");
+            //             a.href = downloadUrl; a.download = filename;
+            //             document.body.appendChild(a); a.click(); a.remove();
+            //             URL.revokeObjectURL(downloadUrl);
+            //         })
+            //         .finally(() => showSpinner(false));
+            // });
 
             // Delete Batch (pass ?batch_id=...)
             $('#del_batch').on('click', function () {
