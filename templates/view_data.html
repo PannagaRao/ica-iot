@@ -136,7 +136,7 @@
                 <div class="col">
                     <div class="kv"><span>PROCESS PILOT</span><span>ICA</span></div>
                     <div class="kv"><span>User Name</span><span>ica@ica.com</span></div>
-                    <div class="kv"><span>Batch</span><span id="hdr_batch"></span></div>
+                    <div class="kv"><span>Serial Number</span><span>ICA</span></div>
                     <div class="kv"><span>Set Time</span><span id="hdr_set_time"></span></div>
                     <div class="kv"><span>Set Tool RPM</span><span id="hdr_set_rpm"></span></div>
                 </div>
@@ -152,6 +152,7 @@
                     <div class="kv"><span>Process End Time</span><span id="hdr_end_time"></span></div>
                     <div class="kv"><span>Date</span><span id="hdr_today"></span></div>
                     <div class="kv"><span>Interval</span><span id="hdr_interval"></span></div>
+                    <div class="kv"><span>Batch</span><span id="hdr_batch"></span></div>
                 </div>
             </div>
         </div>
@@ -258,7 +259,6 @@
 
             // fallbacks if flags weren’t found
             if (!startTs && rows.length) startTs = rows[0][TS_IDX];
-            if (!endTs && rows.length) endTs = rows[rows.length - 1][TS_IDX];
 
             return { startTs, endTs };
         }
@@ -391,7 +391,7 @@
 
                 // Start/End time from first/last row in this fetched set
                 const { startTs: startStr, endTs: endStr } = getStartEndFromFlags(rows);
-                
+
 
                 // --- Build a clean DOM fragment (header + plain table) for PDF ---
                 const wrapper = document.createElement('div');
@@ -403,12 +403,12 @@
                 header.querySelector('#hdr_batch') && (header.querySelector('#hdr_batch').textContent = q);
                 header.querySelector('#hdr_today') && (header.querySelector('#hdr_today').textContent = new Date().toLocaleString('en-GB'));
                 header.querySelector('#hdr_start_time') && (header.querySelector('#hdr_start_time').textContent = toGB(startStr));
-                header.querySelector('#hdr_end_time') && (header.querySelector('#hdr_end_time').textContent = toGB(endStr));
-                // header.querySelector('#hdr_interval') && (header.querySelector('#hdr_interval').textContent = String(interval));
+                const endText = endStr ? toGB(endStr) : "N/A";
+                header.querySelector('#hdr_end_time') && (header.querySelector('#hdr_end_time').textContent = endText);
                 header.style.pageBreakInside = 'avoid';
                 wrapper.appendChild(header);
 
-                
+
 
                 const tableEl = document.createElement('table');
                 tableEl.style.width = '100%';
@@ -486,7 +486,7 @@
 
                 // --- Generate PDF (offline) ---
                 const dt = new Date().toISOString().replace('T', '_').replaceAll(':', '-').split('.')[0];
-                const filename = `report_view_${q}_${dt}.pdf`;
+                const filename = `report_data_${dt}.pdf`;
 
                 const opt = {
                     margin: [5, 8, 8, 8],
@@ -560,7 +560,7 @@
                         return isNaN(d) ? (ts || '') : d.toLocaleString('en-GB');
                     }
                     $("#hdr_start_time").text(toGB(startTs));
-                    $("#hdr_end_time").text(toGB(endTs));
+                    $("#hdr_end_time").text(endTs ? toGB(endTs) : "N/A");
                     $("#hdr_interval").text(String(interval));
                     $("#hdr_set_time").text(String(setTimeVal));
                     $("#hdr_set_rpm").text(String(setRpmVal));
@@ -574,27 +574,6 @@
                     $("#hdr_set_rpm").text("");
                 }
             });
-
-            // Report PDF
-            // $('#print_data').on('click', function (e) {
-            //     e.preventDefault();
-            //     const q = $('#myTable_filter input').val().trim();
-            //     if (!q) return;
-            //     let dt = new Date().toISOString().replace("T", "_").replaceAll(":", "-").split(".")[0];
-            //     let filename = `report_data_${dt}.pdf`;
-            //     let url = `/report?filename=${encodeURIComponent(filename)}&batch_id=${encodeURIComponent(q)}`;
-            //     showSpinner(true);
-            //     fetch(url, { method: 'GET' })
-            //         .then(r => r.blob())
-            //         .then(blob => {
-            //             const downloadUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-            //             const a = document.createElement("a");
-            //             a.href = downloadUrl; a.download = filename;
-            //             document.body.appendChild(a); a.click(); a.remove();
-            //             URL.revokeObjectURL(downloadUrl);
-            //         })
-            //         .finally(() => showSpinner(false));
-            // });
 
             // Delete Batch (pass ?batch_id=...)
             $('#del_batch').on('click', function () {

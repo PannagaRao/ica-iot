@@ -10,7 +10,6 @@ from datetime import datetime
 import multiprocessing
 
 import parameters
-from client import print_db_to_pdf  # uses the updated client.py below
 
 DATABASE_URL = "sqlite:///./register_data.db"
 engine = create_engine(DATABASE_URL, echo=True)
@@ -222,57 +221,6 @@ def delete_all_data():
     session.execute(stmt)
     session.commit()
     session.close()
-
-
-# ---------------- Report ----------------
-@app.route('/report')
-def report():
-    print("[ROUTE] /report accessed")
-    filename = request.args.get('filename')  # optional override for PDF filename
-    batch_id_q = request.args.get('batch_id')
-
-    session = Session()
-    if not batch_id_q:
-        print("[DB] Generating report for all batches")
-        batch_rows = session.query(register_data).order_by(register_data.c.id.asc()).all()
-    else:
-        print("[DB] Generating report for batch ID:", batch_id_q)
-        batch_rows = (session.query(register_data)
-                      .filter(register_data.c.batch_id == str(batch_id_q))
-                      .order_by(register_data.c.id.asc())
-                      .all())
-    session.close()
-
-    # ---- Build report rows ----
-    report_data = []
-    for idx, row in enumerate(batch_rows, start=1):
-        drive_trip, pressure_low, motor_ptc, temp_sensor = alarm_bits_from_row(row)
-        report_row = {
-            "S.no": idx,
-            "Date & Time": f"{row.date} {row.time}",
-            "Batch ID": row.batch_id,  # present in payload (PDF ignores it per your preference)
-            "Motor Speed": getattr(row, "register2", None),
-            "Motor Current": getattr(row, "register3", None),
-            "Motor Torque": getattr(row, "register4", None),
-            "Motor Run Hour": getattr(row, "register5", None),
-            "Product Temperature": getattr(row, "register6", None),
-            "Actual Time": getattr(row, "register9", None),
-            # four separate alarm columns (0/1)
-            "Drive Trip Alarm": drive_trip,
-            "Pressure Low Alarm": pressure_low,
-            "Motor PTC Alarm": motor_ptc,
-            "Temperature Sensor Alarm": temp_sensor,
-        }
-        report_data.append(report_row)
-
-    if report_data:
-        # Updated client.print_db_to_pdf supports optional filename override
-        interval_value = batch_rows[0].register16 if batch_rows else None
-        return print_db_to_pdf(report_data, filename_override=filename, interval=interval_value)
-
-    # fallback to view if nothing to report
-    return redirect("/view")
-
 
 # ---------------- File & Delete Endpoints ----------------
 @app.route('/del_file/<filename>')
